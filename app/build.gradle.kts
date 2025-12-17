@@ -5,23 +5,32 @@ plugins {
 }
 
 android {
-    namespace = "com.jv.attentionpanner" 
+    namespace = "com.jv.attentionpanner"
     compileSdk = 35
 
     defaultConfig {
-        applicationId =  "com.jv.attentionpanner" 
+        applicationId = "com.jv.attentionpanner"
         minSdk = 31
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        // REMOVED: ndk { abiFilters... } 
+        // We removed this because it restricts the build to only one CPU. 
+        // The 'splits' block below handles multiple CPUs now.
+    }
 
-        // --- OPTIMIZATION: REMOVE PC EMULATOR CODE ---
-        // This ensures the APK only contains code for your phone (ARM),
-        // reducing the size significantly.
-        ndk {
-            abiFilters += listOf("arm64-v8a")
+    // --- NEW: GENERATE MULTIPLE APKS ---
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            // Creates separate APKs for these architectures
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            // Generates a "Universal" (fat) APK that works on all devices as well
+            isUniversalApk = true
         }
     }
 
@@ -35,9 +44,7 @@ android {
             )
         }
         debug {
-            // --- OPTIMIZATION: SHRINK DEBUG BUILDS ---
-            // This enables R8 Code Shrinking for the "Run" button.
-            // It removes unused code from libraries (like ExoPlayer features you don't use).
+            // Optimization for Debug builds (keep enabled for small size)
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -58,11 +65,17 @@ android {
     }
 }
 
-// --- FIX: FORCE CORRECT AAPT2 FOR PHONE COMPILATION ---
-configurations.all {
-    resolutionStrategy.eachDependency {
-        if (requested.group == "com.android.tools.build" && requested.name == "aapt2") {
-            useTarget("com.android.tools.build:aapt2:8.9.2-12782657:linux-aarch64")
+// --- LOGIC: FORCE AAPT2 ONLY ON PHONE ---
+// Check if we are running on GitHub Actions (CI)
+val isRunningOnCI = System.getenv("CI") == "true"
+
+// Only apply the Linux-ARM64 fix if we are NOT on a CI server (meaning we are on the phone)
+if (!isRunningOnCI) {
+    configurations.all {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "com.android.tools.build" && requested.name == "aapt2") {
+                useTarget("com.android.tools.build:aapt2:8.9.2-12782657:linux-aarch64")
+            }
         }
     }
 }
