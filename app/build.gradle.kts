@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "ok.ok.ok"
+    namespace = "com.jv.attentionpanner" 
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "ok.ok.ok"
+        applicationId =  "com.jv.attentionpanner" 
         minSdk = 31
         targetSdk = 35
         versionCode = 1
@@ -21,7 +21,7 @@ android {
         // This ensures the APK only contains code for your phone (ARM),
         // reducing the size significantly.
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            abiFilters += listOf("arm64-v8a")
         }
     }
 
