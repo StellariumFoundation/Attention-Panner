@@ -1,6 +1,7 @@
 package com.jv.attentionpanner
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -12,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.MediaStore
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
@@ -90,11 +92,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             var minMinutes by remember { mutableStateOf("1") }
             var maxMinutes by remember { mutableStateOf("2") }
+            var keepScreenOn by remember { mutableStateOf(false) } // New Checkbox State
             
             var statusMessage by remember { mutableStateOf("Initializing...") }
             var isDownloading by remember { mutableStateOf(false) }
             var mediaCount by remember { mutableStateOf(0) }
             var verseCount by remember { mutableStateOf(0) }
+
+            // Check if battery optimization is already ignored
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val isIgnoringBatteryOptimizations = pm.isIgnoringBatteryOptimizations(packageName)
 
             LaunchedEffect(Unit) {
                 withContext(Dispatchers.IO) {
@@ -165,6 +172,36 @@ class MainActivity : ComponentActivity() {
                         label = { Text("Max Minutes") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(), colors = colors
                     )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // --- KEEP SCREEN ON CHECKBOX ---
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = keepScreenOn,
+                            onCheckedChange = { keepScreenOn = it },
+                            colors = CheckboxDefaults.colors(checkedColor = Color.Magenta, uncheckedColor = Color.Gray, checkmarkColor = Color.White)
+                        )
+                        Text("Wake & Keep Screen On", color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    // --- BATTERY OPTIMIZATION BUTTON ---
+                    if (!isIgnoringBatteryOptimizations) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                @SuppressLint("BatteryLife")
+                                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                                intent.data = Uri.parse("package:$packageName")
+                                startActivity(intent)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Allow Background Run (Important!)", color = Color.Yellow)
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(32.dp))
 
                     Button(
@@ -173,6 +210,7 @@ class MainActivity : ComponentActivity() {
                                 val intent = Intent(this@MainActivity, OverlayService::class.java)
                                 intent.putExtra("MIN_MINUTES", minMinutes.toLongOrNull() ?: 1L)
                                 intent.putExtra("MAX_MINUTES", maxMinutes.toLongOrNull() ?: 2L)
+                                intent.putExtra("KEEP_SCREEN_ON", keepScreenOn) // Pass boolean
                                 startService(intent)
                                 Toast.makeText(this@MainActivity, "Service Started!", Toast.LENGTH_SHORT).show()
                                 moveTaskToBack(true)
@@ -296,7 +334,6 @@ class TTSManager(context: Context) {
         }
     }
 
-    // THIS FUNCTION WAS MISSING IN PREVIOUS VERSION
     fun stop() {
         if (isInitialized) {
             tts?.stop()
@@ -384,7 +421,6 @@ class MediaDatabaseHelper private constructor(context: Context) : SQLiteOpenHelp
             db.execSQL("DELETE FROM media_table")
             db.execSQL("DELETE FROM sqlite_sequence WHERE name='media_table'")
             
-            // Filter > 16KB
             val selection = "${MediaStore.MediaColumns.SIZE} > 16384"
             val projection = arrayOf(MediaStore.MediaColumns._ID)
 
@@ -429,6 +465,8 @@ class OverlayService : android.app.Service() {
 
     private var minDelayMs: Long = 60000L
     private var maxDelayMs: Long = 120000L
+    private var keepScreenOn = false // Config Variable
+
     private val showRunnable = Runnable { showRandomContent() }
 
     override fun onBind(intent: Intent?) = null
@@ -437,6 +475,8 @@ class OverlayService : android.app.Service() {
         intent?.let {
             val minMin = it.getLongExtra("MIN_MINUTES", 1)
             val maxMin = it.getLongExtra("MAX_MINUTES", 2)
+            keepScreenOn = it.getBooleanExtra("KEEP_SCREEN_ON", false) // Get Checkbox Value
+
             minDelayMs = minMin * 60 * 1000L
             maxDelayMs = maxMin * 60 * 1000L
             if (maxDelayMs < minDelayMs) maxDelayMs = minDelayMs
@@ -519,10 +559,22 @@ class OverlayService : android.app.Service() {
             }
         }
 
+        // --- CONFIGURE WINDOW FLAGS BASED ON CHECKBOX ---
+        var layoutFlags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or 
+                          WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        
+        if (keepScreenOn) {
+            // Keep screen on while overlay is visible, and wake it up if sleeping
+            layoutFlags = layoutFlags or 
+                          WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                          WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                          WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        }
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            layoutFlags, // Use dynamic flags
             PixelFormat.TRANSLUCENT
         )
 
@@ -540,7 +592,7 @@ class OverlayService : android.app.Service() {
         }
         exoPlayer?.stop() 
         exoPlayer?.clearMediaItems()
-        ttsManager?.stop() // This works now!
+        ttsManager?.stop() 
     }
 
     override fun onDestroy() {
