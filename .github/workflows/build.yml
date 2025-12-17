@@ -2,7 +2,7 @@ name: Android Multi-Arch Build
 
 on:
   push:
-    branches: [ "main" ] # Trigger on every push to main branch
+    branches: [ "master" ] # Trigger on every push to main branch
 
 jobs:
   build:
