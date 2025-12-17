@@ -1,4 +1,3 @@
-
 # 🧠 Attention Panner
 
 **Attention Panner** is a mindful Android application designed to interrupt doom-scrolling and regain your focus. It periodically overlays your screen with personal media memories (photos/videos) or wisdom from scripture, using a cryptographically secure random algorithm to ensure every moment is unexpected.
